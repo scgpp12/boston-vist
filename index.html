@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>城市故事 | City Stories</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary: #2563EB;
+  --primary-light: #3b82f6;
+  --primary-dark: #1d4ed8;
+  --bg-dark: #1a1a2e;
+  --bg-panel: #ffffff;
+  --text-dark: #1e293b;
+  --text-light: #64748b;
+  --text-white: #f1f5f9;
+  --border: #e2e8f0;
+  --shadow: 0 4px 24px rgba(0,0,0,0.15);
+  --radius: 12px;
+}
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-dark);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ===== Header ===== */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: linear-gradient(135deg, var(--bg-dark) 0%, #16213e 100%);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(10px);
+}
+
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-white);
+  white-space: nowrap;
+  letter-spacing: 1px;
+}
+
+.header-title span {
+  color: var(--primary-light);
+}
+
+
+.api-input-wrap {
+  flex: 1;
+  min-width: 140px;
+}
+
+.api-input-wrap input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-white);
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.api-input-wrap input:focus {
+  border-color: var(--primary);
+}
+
+.api-input-wrap input::placeholder {
+  color: rgba(255,255,255,0.3);
+}
+
+.lang-toggle {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: var(--text-white);
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.lang-toggle:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ===== Map ===== */
+#map {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== Locate Button ===== */
+.locate-btn {
+  position: fixed;
+  bottom: 30px;
+  left: 20px;
+  z-index: 500;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.locate-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.2);
+}
+
+.locate-btn svg {
+  width: 22px;
+  height: 22px;
+  color: var(--primary);
+}
+
+/* ===== History Button ===== */
+.history-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 20px;
+  z-index: 500;
+  height: 44px;
+  border-radius: 22px;
+  background: var(--bg-panel);
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  color: var(--text-dark);
+  transition: transform 0.2s;
+}
+
+.history-btn:hover {
+  transform: scale(1.05);
+}
+
+.history-btn svg {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+}
+
+.history-badge {
+  background: var(--primary);
+  color: white;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* ===== Info Panel ===== */
+.panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 800;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.panel-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.info-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100%;
+  background: var(--bg-panel);
+  z-index: 900;
+  transform: translateX(100%);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 30px rgba(0,0,0,0.15);
+}
+
+.info-panel.open {
+  transform: translateX(0);
+}
+
+.panel-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.panel-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #f1f5f9;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  font-size: 18px;
+  color: var(--text-light);
+}
+
+.panel-close:hover {
+  background: #e2e8f0;
+  color: var(--text-dark);
+}
+
+.panel-place-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  padding-right: 40px;
+  line-height: 1.3;
+}
+
+.panel-place-address {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 8px;
+}
+
+.panel-place-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.panel-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.panel-types {
+  color: var(--text-light);
+  font-size: 12px;
+}
+
+.panel-photo {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: none;
+}
+
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.panel-narration {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text-dark);
+  white-space: pre-wrap;
+}
+
+/* ===== Loading Dots ===== */
+.loading-dots {
+  display: flex;
+  gap: 6px;
+  padding: 20px 0;
+  justify-content: center;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: 0s; }
+.loading-dots span:nth-child(2) { animation-delay: 0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ===== Skeleton ===== */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-line {
+  height: 14px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  border-radius: 6px;
+  animation: shimmer 1.5s infinite;
+}
+
+.skeleton-line:nth-child(1) { width: 100%; }
+.skeleton-line:nth-child(2) { width: 90%; }
+.skeleton-line:nth-child(3) { width: 95%; }
+.skeleton-line:nth-child(4) { width: 70%; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== History Panel ===== */
+.history-panel {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 300px;
+  max-height: 400px;
+  background: var(--bg-panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 600;
+  overflow: hidden;
+  transform: translateY(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s ease;
+}
+
+.history-panel.open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.history-panel-header {
+  padding: 14px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-clear {
+  font-size: 12px;
+  color: var(--text-light);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.history-clear:hover {
+  color: #ef4444;
+}
+
+.history-list {
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.history-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.15s;
+}
+
+.history-item:hover {
+  background: #f8fafc;
+}
+
+.history-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.history-item-address {
+  font-size: 12px;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-empty {
+  padding: 30px;
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+}
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(30, 41, 59, 0.92);
+  color: white;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-size: 13px;
+  z-index: 2000;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== Error Banner ===== */
+.error-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  z-index: 1100;
+  display: none;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(220,38,38,0.12);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 640px) {
+  .header {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .header-title {
+    font-size: 16px;
+  }
+
+  .api-inputs {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .info-panel {
+    width: 100%;
+    height: 70vh;
+    top: auto;
+    bottom: 0;
+    border-radius: 20px 20px 0 0;
+    transform: translateY(100%);
+  }
+
+  .info-panel.open {
+    transform: translateY(0);
+  }
+
+  .panel-photo {
+    height: 140px;
+  }
+
+  .history-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+    bottom: 85px;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title"><span>&#9670;</span> 城市故事</div>
+  <div class="api-input-wrap">
+    <input type="password" id="claudeKey" placeholder="请输入 Claude API Key" />
+  </div>
+  <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
+</div>
+
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Locate Button -->
+<button class="locate-btn" onclick="locateUser()" title="定位">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+  </svg>
+</button>
+
+<!-- History Button -->
+<button class="history-btn" id="historyBtn" onclick="toggleHistory()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+  <span data-i18n="history">历史</span>
+  <span class="history-badge" id="historyBadge">0</span>
+</button>
+
+<!-- Panel Overlay -->
+<div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+
+<!-- Info Panel -->
+<div class="info-panel" id="infoPanel">
+  <img class="panel-photo" id="panelPhoto" />
+  <div class="panel-header">
+    <button class="panel-close" onclick="closePanel()">&#10005;</button>
+    <div class="panel-place-name" id="panelName">—</div>
+    <div class="panel-place-address" id="panelAddress">—</div>
+    <div class="panel-place-meta">
+      <div class="panel-rating" id="panelRating"></div>
+      <div class="panel-types" id="panelTypes"></div>
+    </div>
+  </div>
+  <div class="panel-content">
+    <div class="panel-narration" id="panelNarration"></div>
+  </div>
+</div>
+
+<!-- History Panel -->
+<div class="history-panel" id="historyPanel">
+  <div class="history-panel-header">
+    <span data-i18n="visited">已访问地点</span>
+    <button class="history-clear" onclick="clearHistory()" data-i18n="clearAll">清除全部</button>
+  </div>
+  <div class="history-list" id="historyList"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Error Banner -->
+<div class="error-banner" id="errorBanner"></div>
+
+<script>
+// ===== State =====
+let map, currentMarker, currentPlace, currentAbortController;
+let lang = 'zh';
+let historyItems = JSON.parse(localStorage.getItem('cityStoryHistory') || '[]');
+let historyOpen = false;
+let mapsLoaded = false;
+
+// ===== i18n =====
+const i18n = {
+  zh: {
+    history: '历史',
+    visited: '已访问地点',
+    clearAll: '清除全部',
+    noHistory: '暂无访问记录',
+    clickHint: '请点击地图上的建筑或地点',
+    needMapsKey: '请先输入 Google Maps API Key',
+    needClaudeKey: '请先输入 Claude API Key',
+    networkError: '网络错误，请稍后重试',
+    loadingMap: '正在加载地图...',
+    locating: '正在定位...',
+    locationError: '定位失败，请检查浏览器权限',
+  },
+  en: {
+    history: 'History',
+    visited: 'Visited Places',
+    clearAll: 'Clear All',
+    noHistory: 'No visited places yet',
+    clickHint: 'Please click a building or place on the map',
+    needMapsKey: 'Please enter your Google Maps API Key first',
+    needClaudeKey: 'Please enter your Claude API Key first',
+    networkError: 'Network error, please try again',
+    loadingMap: 'Loading map...',
+    locating: 'Locating...',
+    locationError: 'Location failed. Please check browser permissions',
+  }
+};
+
+function t(key) {
+  return i18n[lang][key] || key;
+}
+
+function toggleLang() {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  document.getElementById('langToggle').textContent = lang === 'zh' ? 'EN' : '中文';
+  // Update i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  // If panel is open and has content, regenerate
+  if (currentPlace && document.getElementById('infoPanel').classList.contains('open')) {
+    fetchNarration(currentPlace);
+  }
+}
+
+// ===== Toast =====
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ===== Error Banner =====
+let errorTimer;
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => el.style.display = 'none', 5000);
+}
+
+// ===== Map Loading =====
+const GOOGLE_MAPS_KEY = 'AIzaSyDaqBzIVE2pIQsp0ahpPQyBLO2p9M2jUHE';
+
+function loadGoogleMaps() {
+  if (mapsLoaded) return;
+  mapsLoaded = true;
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&loading=async&callback=initMap`;
+  script.async = true;
+  script.defer = true;
+  script.onerror = () => {
+    mapsLoaded = false;
+    showError('Google Maps 加载失败');
+  };
+  document.head.appendChild(script);
+}
+
+// 页面加载后自动加载地图
+loadGoogleMaps();
+
+// ===== Init Map =====
+function initMap() {
+  const boston = { lat: 42.3601, lng: -71.0589 };
+
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: boston,
+    zoom: 16,
+    styles: [
+      { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+      { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+      { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+      { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#4b6878' }] },
+      { featureType: 'land_parcel', elementType: 'labels.text.fill', stylers: [{ color: '#64779e' }] },
+      { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#283d6a' }] },
+      { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6f9ba5' }] },
+      { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ color: '#023e58' }] },
+      { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#3C7680' }] },
+      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+      { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#98a5be' }] },
+      { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
+      { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
+      { featureType: 'transit', elementType: 'labels.text.fill', stylers: [{ color: '#98a5be' }] },
+      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+      { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4e6d70' }] },
+    ],
+    disableDefaultUI: false,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    clickableIcons: true,
+  });
+
+  // Listen for POI clicks
+  map.addListener('click', (event) => {
+    if (event.placeId) {
+      event.stop();
+      handlePlaceClick(event.placeId, event.latLng);
+    } else {
+      showToast(t('clickHint'));
+    }
+  });
+}
+
+// ===== Handle Place Click =====
+async function handlePlaceClick(placeId, latLng) {
+  if (!map) {
+    showError(t('needMapsKey'));
+    return;
+  }
+
+  // Place marker
+  if (currentMarker) currentMarker.setMap(null);
+  currentMarker = new google.maps.Marker({
+    position: latLng,
+    map: map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 12,
+      fillColor: '#2563EB',
+      fillOpacity: 0.9,
+      strokeColor: '#ffffff',
+      strokeWeight: 3,
+    },
+    animation: google.maps.Animation.DROP,
+  });
+
+  // Get place details using new Places API
+  try {
+    const { Place } = await google.maps.importLibrary('places');
+    const place = new Place({ id: placeId });
+    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'rating', 'types', 'photos'] });
+
+    // Normalize to a simple object for the rest of the app
+    const placeData = {
+      name: place.displayName || '',
+      formatted_address: place.formattedAddress || '',
+      rating: place.rating || null,
+      types: place.types || [],
+      photos: place.photos || [],
+    };
+
+    currentPlace = placeData;
+    openPanel(placeData);
+    fetchNarration(placeData);
+    addToHistory(placeData, placeId, latLng);
+  } catch (err) {
+    console.error('Places API error:', err);
+    showError('无法获取地点信息: ' + err.message);
+  }
+}
+
+// ===== Panel =====
+function openPanel(place) {
+  const panel = document.getElementById('infoPanel');
+  const overlay = document.getElementById('panelOverlay');
+
+  // Name
+  document.getElementById('panelName').textContent = place.name || '未知地点';
+
+  // Address
+  document.getElementById('panelAddress').textContent = place.formatted_address || '';
+
+  // Rating
+  const ratingEl = document.getElementById('panelRating');
+  if (place.rating) {
+    const stars = '★'.repeat(Math.round(place.rating)) + '☆'.repeat(5 - Math.round(place.rating));
+    ratingEl.innerHTML = `${stars} <span style="color:#64748b">${place.rating}</span>`;
+  } else {
+    ratingEl.innerHTML = '';
+  }
+
+  // Types
+  const typesEl = document.getElementById('panelTypes');
+  if (place.types && place.types.length > 0) {
+    typesEl.textContent = place.types.slice(0, 3).join(' · ');
+  } else {
+    typesEl.textContent = '';
+  }
+
+  // Photo
+  const photoEl = document.getElementById('panelPhoto');
+  if (place.photos && place.photos.length > 0) {
+    const photo = place.photos[0];
+    // New API uses getURI(), old API uses getUrl()
+    const photoUrl = typeof photo.getURI === 'function'
+      ? photo.getURI({ maxWidth: 600 })
+      : typeof photo.getUrl === 'function'
+        ? photo.getUrl({ maxWidth: 600 })
+        : null;
+    if (photoUrl) {
+      photoEl.src = photoUrl;
+      photoEl.style.display = 'block';
+    } else {
+      photoEl.style.display = 'none';
+    }
+  } else {
+    photoEl.style.display = 'none';
+  }
+
+  // Show loading
+  document.getElementById('panelNarration').innerHTML = `
+    <div class="skeleton">
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line"></div>
+    </div>
+    <div class="loading-dots"><span></span><span></span><span></span></div>
+  `;
+
+  panel.classList.add('open');
+  overlay.classList.add('active');
+}
+
+function closePanel() {
+  document.getElementById('infoPanel').classList.remove('open');
+  document.getElementById('panelOverlay').classList.remove('active');
+  if (currentAbortController) {
+    currentAbortController.abort();
+    currentAbortController = null;
+  }
+}
+
+// ===== Claude API =====
+async function fetchNarration(place) {
+  const claudeKey = document.getElementById('claudeKey').value.trim();
+  if (!claudeKey) {
+    showError(t('needClaudeKey'));
+    return;
+  }
+
+  // Abort previous request
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  currentAbortController = new AbortController();
+
+  const systemPromptZh = `你是一位博学风趣的城市历史导游。用户会告诉你一个建筑或地点的名称和地址，你需要用生动有趣的中文讲解它的历史故事。
+要求：
+- 200-300字
+- 开头直接进入故事，不要说'好的'或'这是xxx'
+- 包含建造年代、历史意义、有趣的细节或故事
+- 语气像一个站在现场的导游，生动自然
+- 如果是教堂，重点讲宗教历史和建筑特色
+- 如果信息不足，发挥合理想象但注明'据说'或'相传'`;
+
+  const systemPromptEn = `You are a knowledgeable and witty city history tour guide. The user will tell you a building or place's name and address. You should narrate its history in an engaging way in English.
+Requirements:
+- 150-250 words
+- Start directly with the story, don't say 'Sure' or 'This is...'
+- Include construction era, historical significance, and interesting details or stories
+- Sound like a tour guide standing on site, vivid and natural
+- If it's a church, focus on religious history and architectural features
+- If info is limited, use reasonable imagination but note 'reportedly' or 'legend has it'`;
+
+  const userMsg = `请介绍这个地点：
+名称：${place.name || '未知'}
+地址：${place.formatted_address || '未知'}
+类型：${(place.types || []).join(', ')}
+评分：${place.rating || '无'}`;
+
+  const narrationEl = document.getElementById('panelNarration');
+  narrationEl.innerHTML = `
+    <div class="loading-dots"><span></span><span></span><span></span></div>
+  `;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': claudeKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        stream: true,
+        system: lang === 'zh' ? systemPromptZh : systemPromptEn,
+        messages: [{ role: 'user', content: userMsg }],
+      }),
+      signal: currentAbortController.signal,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`API Error ${response.status}: ${errText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+    narrationEl.textContent = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.text) {
+              fullText += parsed.delta.text;
+              narrationEl.textContent = fullText;
+              // Auto-scroll
+              narrationEl.parentElement.scrollTop = narrationEl.parentElement.scrollHeight;
+            }
+          } catch (e) {
+            // Skip non-JSON lines
+          }
+        }
+      }
+    }
+
+    // Save narration to history
+    updateHistoryNarration(place.name, fullText);
+
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    console.error('Claude API error:', err);
+    narrationEl.innerHTML = `<div style="color:#ef4444;font-size:13px;">${t('networkError')}<br><small>${err.message}</small></div>`;
+  }
+}
+
+// ===== History =====
+function addToHistory(place, placeId, latLng) {
+  // Check if already exists
+  const exists = historyItems.findIndex(h => h.placeId === placeId);
+  if (exists >= 0) {
+    // Move to top
+    const item = historyItems.splice(exists, 1)[0];
+    historyItems.unshift(item);
+  } else {
+    historyItems.unshift({
+      placeId,
+      name: place.name,
+      address: place.formatted_address,
+      rating: place.rating,
+      types: place.types,
+      lat: latLng.lat(),
+      lng: latLng.lng(),
+      narration: '',
+      timestamp: Date.now(),
+    });
+  }
+
+  // Keep max 50
+  if (historyItems.length > 50) historyItems.pop();
+
+  saveHistory();
+  renderHistory();
+}
+
+function updateHistoryNarration(placeName, narration) {
+  const item = historyItems.find(h => h.name === placeName);
+  if (item) {
+    item.narration = narration;
+    saveHistory();
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem('cityStoryHistory', JSON.stringify(historyItems));
+  document.getElementById('historyBadge').textContent = historyItems.length;
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (historyItems.length === 0) {
+    list.innerHTML = `<div class="history-empty">${t('noHistory')}</div>`;
+    return;
+  }
+  list.innerHTML = historyItems.map((item, i) => `
+    <div class="history-item" onclick="loadHistoryItem(${i})">
+      <div class="history-item-name">${item.name || '未知地点'}</div>
+      <div class="history-item-address">${item.address || ''}</div>
+    </div>
+  `).join('');
+}
+
+function loadHistoryItem(index) {
+  const item = historyItems[index];
+  if (!item) return;
+
+  // Close history panel
+  historyOpen = false;
+  document.getElementById('historyPanel').classList.remove('open');
+
+  // If map is loaded, pan to location
+  if (map) {
+    const pos = { lat: item.lat, lng: item.lng };
+    map.panTo(pos);
+
+    if (currentMarker) currentMarker.setMap(null);
+    currentMarker = new google.maps.Marker({
+      position: pos,
+      map: map,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 12,
+        fillColor: '#2563EB',
+        fillOpacity: 0.9,
+        strokeColor: '#ffffff',
+        strokeWeight: 3,
+      },
+    });
+  }
+
+  // Show panel with cached data
+  const panel = document.getElementById('infoPanel');
+  const overlay = document.getElementById('panelOverlay');
+
+  document.getElementById('panelName').textContent = item.name || '未知地点';
+  document.getElementById('panelAddress').textContent = item.address || '';
+
+  const ratingEl = document.getElementById('panelRating');
+  if (item.rating) {
+    const stars = '★'.repeat(Math.round(item.rating)) + '☆'.repeat(5 - Math.round(item.rating));
+    ratingEl.innerHTML = `${stars} <span style="color:#64748b">${item.rating}</span>`;
+  } else {
+    ratingEl.innerHTML = '';
+  }
+
+  const typesEl = document.getElementById('panelTypes');
+  typesEl.textContent = item.types ? item.types.slice(0, 3).join(' · ') : '';
+
+  document.getElementById('panelPhoto').style.display = 'none';
+
+  const narrationEl = document.getElementById('panelNarration');
+  if (item.narration) {
+    narrationEl.textContent = item.narration;
+  } else {
+    narrationEl.textContent = '';
+    // Re-fetch narration
+    currentPlace = { name: item.name, formatted_address: item.address, rating: item.rating, types: item.types };
+    fetchNarration(currentPlace);
+  }
+
+  panel.classList.add('open');
+  overlay.classList.add('active');
+}
+
+function toggleHistory() {
+  historyOpen = !historyOpen;
+  document.getElementById('historyPanel').classList.toggle('open', historyOpen);
+  if (historyOpen) renderHistory();
+}
+
+function clearHistory() {
+  historyItems = [];
+  saveHistory();
+  renderHistory();
+}
+
+// ===== Locate =====
+function locateUser() {
+  if (!map) {
+    showError(t('needMapsKey'));
+    return;
+  }
+  if (!navigator.geolocation) {
+    showError(t('locationError'));
+    return;
+  }
+  showToast(t('locating'));
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      map.panTo(userPos);
+      map.setZoom(17);
+      showToast('✓');
+    },
+    () => {
+      showError(t('locationError'));
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+// ===== Init =====
+document.getElementById('historyBadge').textContent = historyItems.length;
+
+// Close history panel when clicking outside
+document.addEventListener('click', (e) => {
+  if (historyOpen &&
+      !document.getElementById('historyPanel').contains(e.target) &&
+      !document.getElementById('historyBtn').contains(e.target)) {
+    historyOpen = false;
+    document.getElementById('historyPanel').classList.remove('open');
+  }
+});
+</script>
+
+</body>
+</html>
