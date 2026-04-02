@@ -1349,9 +1349,7 @@ function clearHistory() {
 // ===== TTS (OpenAI) =====
 let ttsPlaying = false;
 let ttsAudio = null;
-let ttsChunks = [];
-let ttsChunkIndex = 0;
-let ttsAbort = null;
+let ttsSessionId = 0; // Track each TTS session to avoid stale callbacks
 
 function toggleTTS() {
   if (ttsPlaying) {
@@ -1359,60 +1357,6 @@ function toggleTTS() {
   } else {
     startTTS();
   }
-}
-
-// Split text into chunks under 4096 chars, breaking at sentence boundaries
-function splitTTSChunks(text, maxLen = 3500) {
-  if (text.length <= maxLen) return [text];
-
-  const chunks = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-    // Find last sentence boundary within maxLen
-    let cutPoint = -1;
-    const boundaries = ['。', '！', '？', '.', '!', '?', '\n'];
-    for (let i = maxLen; i > maxLen * 0.5; i--) {
-      if (boundaries.includes(remaining[i])) {
-        cutPoint = i + 1;
-        break;
-      }
-    }
-    if (cutPoint === -1) cutPoint = maxLen;
-
-    chunks.push(remaining.substring(0, cutPoint).trim());
-    remaining = remaining.substring(cutPoint).trim();
-  }
-  return chunks.filter(c => c.length > 0);
-}
-
-async function fetchTTSAudio(text, openaiKey) {
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openaiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'tts-1-hd',
-      input: text,
-      voice: 'nova',
-      speed: 1.0,
-    }),
-    signal: ttsAbort ? ttsAbort.signal : undefined,
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`API Error ${response.status}: ${err}`);
-  }
-
-  const audioBlob = await response.blob();
-  return URL.createObjectURL(audioBlob);
 }
 
 async function startTTS() {
@@ -1425,80 +1369,125 @@ async function startTTS() {
     return;
   }
 
+  // Clean stop any previous playback
   stopTTS();
-  ttsAbort = new AbortController();
-  ttsChunks = splitTTSChunks(text);
-  ttsChunkIndex = 0;
+
+  // Start new session
+  ttsSessionId++;
+  const mySession = ttsSessionId;
+  ttsPlaying = true;
   setTTSState(true);
 
   const hintEl = document.getElementById('ttsVoiceHint');
   hintEl.textContent = lang === 'zh' ? '语音生成中...' : 'Generating...';
 
-  playNextChunk(openaiKey);
-}
-
-async function playNextChunk(openaiKey) {
-  if (ttsChunkIndex >= ttsChunks.length || !ttsPlaying) {
-    setTTSState(false);
-    document.getElementById('ttsVoiceHint').textContent = '';
-    return;
-  }
-
-  const hintEl = document.getElementById('ttsVoiceHint');
-  const chunkInfo = ttsChunks.length > 1 ? ` (${ttsChunkIndex + 1}/${ttsChunks.length})` : '';
-
   try {
-    if (ttsChunkIndex > 0) {
-      hintEl.textContent = (lang === 'zh' ? '生成下一段...' : 'Loading next...') + chunkInfo;
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'tts-1-hd',
+        input: text.substring(0, 4096),
+        voice: 'nova',
+        speed: 1.0,
+        response_format: 'mp3',
+      }),
+    });
+
+    // Check if this session is still active
+    if (mySession !== ttsSessionId) return;
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`API ${response.status}: ${errText}`);
     }
 
-    const audioUrl = await fetchTTSAudio(ttsChunks[ttsChunkIndex], openaiKey);
+    const audioBlob = await response.blob();
+    if (mySession !== ttsSessionId) return;
 
-    if (!ttsPlaying) {
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio();
+
+    // Set up all event handlers before setting src
+    await new Promise((resolve, reject) => {
+      audio.oncanplaythrough = resolve;
+      audio.onerror = () => reject(new Error('Audio decode failed'));
+
+      // Timeout after 10 seconds
+      setTimeout(() => reject(new Error('Audio load timeout')), 10000);
+
+      audio.src = audioUrl;
+      audio.load();
+    });
+
+    if (mySession !== ttsSessionId) {
       URL.revokeObjectURL(audioUrl);
       return;
     }
 
-    ttsAudio = new Audio(audioUrl);
+    ttsAudio = audio;
 
-    ttsAudio.onended = () => {
+    audio.onended = () => {
       URL.revokeObjectURL(audioUrl);
-      ttsChunkIndex++;
-      playNextChunk(openaiKey);
-    };
-
-    ttsAudio.onerror = (e) => {
-      console.error('Audio playback error:', e);
-      URL.revokeObjectURL(audioUrl);
+      ttsAudio = null;
+      ttsPlaying = false;
       setTTSState(false);
       hintEl.textContent = '';
     };
 
-    hintEl.textContent = 'OpenAI Nova' + chunkInfo;
-    await ttsAudio.play();
+    audio.onerror = () => {
+      URL.revokeObjectURL(audioUrl);
+      ttsAudio = null;
+      ttsPlaying = false;
+      setTTSState(false);
+      hintEl.textContent = '';
+    };
+
+    // Handle unexpected pause (browser policy, etc.)
+    audio.onpause = () => {
+      if (ttsPlaying && mySession === ttsSessionId && !audio.ended) {
+        // Try to resume after a brief delay
+        setTimeout(() => {
+          if (ttsPlaying && mySession === ttsSessionId && audio.paused && !audio.ended) {
+            audio.play().catch(() => {
+              ttsPlaying = false;
+              setTTSState(false);
+              hintEl.textContent = '';
+            });
+          }
+        }, 200);
+      }
+    };
+
+    hintEl.textContent = 'OpenAI Nova';
+    await audio.play();
 
   } catch (err) {
-    if (err.name === 'AbortError') return;
+    if (mySession !== ttsSessionId) return;
     console.error('TTS error:', err);
+    ttsPlaying = false;
     setTTSState(false);
     hintEl.textContent = '';
-    showError(lang === 'zh' ? '语音生成失败: ' + err.message : 'Voice failed: ' + err.message);
+    showError(lang === 'zh' ? '语音播放失败: ' + err.message : 'Voice failed: ' + err.message);
   }
 }
 
 function stopTTS() {
+  ttsSessionId++; // Invalidate any pending async work
   ttsPlaying = false;
-  if (ttsAbort) {
-    ttsAbort.abort();
-    ttsAbort = null;
-  }
   if (ttsAudio) {
+    ttsAudio.onended = null;
+    ttsAudio.onerror = null;
+    ttsAudio.onpause = null;
     ttsAudio.pause();
-    ttsAudio.currentTime = 0;
+    if (ttsAudio.src) {
+      URL.revokeObjectURL(ttsAudio.src);
+    }
     ttsAudio = null;
   }
-  ttsChunks = [];
-  ttsChunkIndex = 0;
   setTTSState(false);
   document.getElementById('ttsVoiceHint').textContent = '';
 }
