@@ -866,6 +866,31 @@ function showError(msg) {
   errorTimer = setTimeout(() => el.style.display = 'none', 5000);
 }
 
+// ===== Key Storage =====
+function saveKeys() {
+  const claude = document.getElementById('claudeKey').value.trim();
+  const openai = document.getElementById('openaiKey').value.trim();
+  if (claude) localStorage.setItem('cityStory_claudeKey', claude);
+  if (openai) localStorage.setItem('cityStory_openaiKey', openai);
+}
+
+function loadSavedKeys() {
+  const claude = localStorage.getItem('cityStory_claudeKey');
+  const openai = localStorage.getItem('cityStory_openaiKey');
+  if (claude) document.getElementById('claudeKey').value = claude;
+  if (openai) document.getElementById('openaiKey').value = openai;
+  if (claude || openai) {
+    showToast(lang === 'zh' ? 'API Key 已自动填入' : 'API Keys restored');
+  }
+}
+
+// Auto-save when user types keys
+document.getElementById('claudeKey').addEventListener('input', saveKeys);
+document.getElementById('openaiKey').addEventListener('input', saveKeys);
+
+// Load saved keys on page start
+loadSavedKeys();
+
 // ===== Key File Upload =====
 function loadKeyFile(event) {
   const file = event.target.files[0];
@@ -884,7 +909,8 @@ function loadKeyFile(event) {
       if (json.openai) {
         document.getElementById('openaiKey').value = json.openai.trim();
       }
-      showToast(lang === 'zh' ? 'API Key 已从文件加载' : 'API Keys loaded from file');
+      saveKeys();
+      showToast(lang === 'zh' ? 'API Key 已保存，下次无需重新输入' : 'API Keys saved');
       return;
     } catch (e) {
       // Not JSON, try plain text
@@ -895,7 +921,6 @@ function loadKeyFile(event) {
     let claudeFound = false, openaiFound = false;
 
     for (const line of lines) {
-      // Remove possible label like "claude: sk-ant-..." or "CLAUDE_KEY=sk-ant-..."
       const val = line.replace(/^[^:=]*[:=]\s*/, '').trim();
 
       if (val.startsWith('sk-ant-')) {
@@ -908,10 +933,11 @@ function loadKeyFile(event) {
     }
 
     if (claudeFound || openaiFound) {
+      saveKeys();
       const loaded = [];
       if (claudeFound) loaded.push('Claude');
       if (openaiFound) loaded.push('OpenAI');
-      showToast(`${loaded.join(' + ')} Key 已加载`);
+      showToast(`${loaded.join(' + ')} Key 已保存`);
     } else {
       showError(lang === 'zh' ? '文件中未找到有效的 API Key' : 'No valid API Key found in file');
     }
