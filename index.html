@@ -94,6 +94,31 @@ body {
   color: rgba(255,255,255,0.3);
 }
 
+.key-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.key-upload-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.key-upload-btn svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-white);
+}
+
 .lang-toggle {
   background: rgba(255,255,255,0.1);
   border: 1px solid rgba(255,255,255,0.15);
@@ -678,7 +703,13 @@ body {
   <div class="header-title"><span>&#9670;</span> 城市故事</div>
   <div class="api-input-wrap">
     <input type="password" id="claudeKey" placeholder="Claude API Key" />
-    <input type="password" id="openaiKey" placeholder="OpenAI API Key (语音)" />
+    <input type="password" id="openaiKey" placeholder="OpenAI Key (语音)" />
+    <label class="key-upload-btn" title="上传 keys.txt 文件">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <input type="file" id="keyFileInput" accept=".txt,.json" onchange="loadKeyFile(event)" hidden />
+    </label>
   </div>
   <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
 </div>
@@ -833,6 +864,61 @@ function showError(msg) {
   el.style.display = 'block';
   clearTimeout(errorTimer);
   errorTimer = setTimeout(() => el.style.display = 'none', 5000);
+}
+
+// ===== Key File Upload =====
+function loadKeyFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const content = e.target.result.trim();
+
+    // Try JSON format: { "claude": "sk-ant-...", "openai": "sk-proj-..." }
+    try {
+      const json = JSON.parse(content);
+      if (json.claude) {
+        document.getElementById('claudeKey').value = json.claude.trim();
+      }
+      if (json.openai) {
+        document.getElementById('openaiKey').value = json.openai.trim();
+      }
+      showToast(lang === 'zh' ? 'API Key 已从文件加载' : 'API Keys loaded from file');
+      return;
+    } catch (e) {
+      // Not JSON, try plain text
+    }
+
+    // Plain text: detect keys by prefix, one per line
+    const lines = content.split(/[\n\r]+/).map(l => l.trim()).filter(l => l);
+    let claudeFound = false, openaiFound = false;
+
+    for (const line of lines) {
+      // Remove possible label like "claude: sk-ant-..." or "CLAUDE_KEY=sk-ant-..."
+      const val = line.replace(/^[^:=]*[:=]\s*/, '').trim();
+
+      if (val.startsWith('sk-ant-')) {
+        document.getElementById('claudeKey').value = val;
+        claudeFound = true;
+      } else if (val.startsWith('sk-proj-') || val.startsWith('sk-')) {
+        document.getElementById('openaiKey').value = val;
+        openaiFound = true;
+      }
+    }
+
+    if (claudeFound || openaiFound) {
+      const loaded = [];
+      if (claudeFound) loaded.push('Claude');
+      if (openaiFound) loaded.push('OpenAI');
+      showToast(`${loaded.join(' + ')} Key 已加载`);
+    } else {
+      showError(lang === 'zh' ? '文件中未找到有效的 API Key' : 'No valid API Key found in file');
+    }
+  };
+  reader.readAsText(file);
+  // Reset so same file can be re-uploaded
+  event.target.value = '';
 }
 
 // ===== Map Loading =====
