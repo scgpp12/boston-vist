@@ -431,6 +431,12 @@ body {
   color: white;
 }
 
+.tts-voice-hint {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-left: 8px;
+}
+
 .panel-content {
   flex: 1;
   overflow-y: auto;
@@ -728,6 +734,7 @@ body {
       </svg>
       <span id="ttsLabel">播放</span>
     </button>
+    <span class="tts-voice-hint" id="ttsVoiceHint"></span>
   </div>
   <div class="panel-content">
     <div class="panel-narration" id="panelNarration"></div>
@@ -1255,34 +1262,46 @@ let ttsSentences = [];
 let ttsCurrentIndex = 0;
 let cachedVoices = [];
 
-// Voice quality ranking — prefer Google/Microsoft neural voices
-const VOICE_PRIORITY_ZH = [
-  'Google 普通话',         // Chrome online — best quality
+// Voice quality ranking
+// Edge Neural voices (Online Natural) >> Google online >> Microsoft local
+// Edge provides "Microsoft XXX Online (Natural)" voices — far superior quality
+const VOICE_KEYWORDS_ZH = [
+  'Natural',              // Edge Neural voices — top priority
+  'Online',               // Edge/Chrome online voices
+  'Xiaoxiao',             // Edge Neural — young female, very natural
+  'Yunxi',                // Edge Neural — male, narrator style
+  'Xiaoyi',               // Edge Neural — female
+  'Google 普通话',
   'Google 国语',
-  'Microsoft Xiaoxiao Online',
-  'Microsoft Yunxi Online',
-  'Microsoft Xiaoxiao',
-  'Microsoft Yunxi',
-  'Microsoft Yaoyao',     // Windows local
-  'Microsoft Huihui',     // Windows local
-  'Microsoft Kangkang',   // Windows local (male)
+  'Yaoyao',               // Windows local
+  'Huihui',               // Windows local
+  'Kangkang',             // Windows local (male)
   'Ting-Ting',            // macOS
 ];
-const VOICE_PRIORITY_EN = [
-  'Google US English',    // Chrome online — best quality
+const VOICE_KEYWORDS_EN = [
+  'Natural',              // Edge Neural voices — top priority
+  'Online',               // Edge/Chrome online voices
+  'Jenny',                // Edge Neural — female, very natural
+  'Aria',                 // Edge Neural — female
+  'Guy',                  // Edge Neural — male
+  'Google US English',
   'Google UK English Female',
   'Google UK English Male',
-  'Microsoft Jenny Online',
-  'Microsoft Aria Online',
-  'Microsoft Guy Online',
-  'Microsoft Zira',       // Windows local (female)
-  'Microsoft Mark',       // Windows local (male)
-  'Microsoft David',      // Windows local (male)
   'Samantha',             // macOS
+  'Zira',                 // Windows local
+  'David',                // Windows local
+  'Mark',                 // Windows local
 ];
 
 function loadVoices() {
   cachedVoices = window.speechSynthesis.getVoices();
+  if (cachedVoices.length > 0) {
+    console.log(`[TTS] ${cachedVoices.length} voices loaded.`);
+    const zhNeural = cachedVoices.filter(v => v.lang.startsWith('zh') && (v.name.includes('Natural') || v.name.includes('Online')));
+    if (zhNeural.length > 0) {
+      console.log(`[TTS] Neural ZH voices: ${zhNeural.map(v => v.name).join(', ')}`);
+    }
+  }
 }
 if (window.speechSynthesis) {
   loadVoices();
@@ -1290,19 +1309,28 @@ if (window.speechSynthesis) {
 }
 
 function pickBestVoice() {
-  const priorities = lang === 'zh' ? VOICE_PRIORITY_ZH : VOICE_PRIORITY_EN;
   const targetLang = lang === 'zh' ? 'zh' : 'en';
+  const langVoices = cachedVoices.filter(v => v.lang.startsWith(targetLang));
 
-  // First: try priority list (best quality neural voices)
-  for (const name of priorities) {
-    const v = cachedVoices.find(v => v.name.includes(name));
-    if (v) return v;
-  }
-  // Fallback: any online/remote voice for the language (usually higher quality)
-  const online = cachedVoices.find(v => v.lang.startsWith(targetLang) && !v.localService);
+  if (langVoices.length === 0) return null;
+
+  // 1. Best: Edge Neural "Natural" voices
+  const natural = langVoices.find(v => v.name.includes('Natural'));
+  if (natural) return natural;
+
+  // 2. Good: any Online (non-local) voice
+  const online = langVoices.find(v => !v.localService || v.name.includes('Online'));
   if (online) return online;
-  // Last resort: any matching voice
-  return cachedVoices.find(v => v.lang.startsWith(targetLang)) || null;
+
+  // 3. Try keyword priority list
+  const keywords = lang === 'zh' ? VOICE_KEYWORDS_ZH : VOICE_KEYWORDS_EN;
+  for (const kw of keywords) {
+    const match = langVoices.find(v => v.name.includes(kw));
+    if (match) return match;
+  }
+
+  // 4. Last resort
+  return langVoices[0];
 }
 
 // Split text into sentences for more natural pacing
@@ -1339,6 +1367,21 @@ function startTTS() {
 
   ttsSentences = splitSentences(text);
   ttsCurrentIndex = 0;
+
+  // Show voice info
+  const voice = pickBestVoice();
+  const hintEl = document.getElementById('ttsVoiceHint');
+  if (voice) {
+    const isNeural = voice.name.includes('Natural') || voice.name.includes('Online');
+    if (isNeural) {
+      hintEl.textContent = '🎙 ' + voice.name.split('-')[0].trim();
+    } else {
+      hintEl.textContent = lang === 'zh' ? '💡 用 Edge 浏览器可获得更自然的语音' : '💡 Use Edge for natural AI voice';
+    }
+  } else {
+    hintEl.textContent = '';
+  }
+
   setTTSState(true);
   speakNext();
 }
