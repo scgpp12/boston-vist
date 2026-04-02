@@ -1251,7 +1251,77 @@ function clearHistory() {
 
 // ===== TTS =====
 let ttsPlaying = false;
-let ttsUtterance = null;
+let ttsSentences = [];
+let ttsCurrentIndex = 0;
+let cachedVoices = [];
+
+// Voice quality ranking — prefer Google/Microsoft neural voices
+const VOICE_PRIORITY_ZH = [
+  'Google 普通话',         // Chrome online — best quality
+  'Google 国语',
+  'Microsoft Xiaoxiao Online',
+  'Microsoft Yunxi Online',
+  'Microsoft Xiaoxiao',
+  'Microsoft Yunxi',
+  'Microsoft Yaoyao',     // Windows local
+  'Microsoft Huihui',     // Windows local
+  'Microsoft Kangkang',   // Windows local (male)
+  'Ting-Ting',            // macOS
+];
+const VOICE_PRIORITY_EN = [
+  'Google US English',    // Chrome online — best quality
+  'Google UK English Female',
+  'Google UK English Male',
+  'Microsoft Jenny Online',
+  'Microsoft Aria Online',
+  'Microsoft Guy Online',
+  'Microsoft Zira',       // Windows local (female)
+  'Microsoft Mark',       // Windows local (male)
+  'Microsoft David',      // Windows local (male)
+  'Samantha',             // macOS
+];
+
+function loadVoices() {
+  cachedVoices = window.speechSynthesis.getVoices();
+}
+if (window.speechSynthesis) {
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function pickBestVoice() {
+  const priorities = lang === 'zh' ? VOICE_PRIORITY_ZH : VOICE_PRIORITY_EN;
+  const targetLang = lang === 'zh' ? 'zh' : 'en';
+
+  // First: try priority list (best quality neural voices)
+  for (const name of priorities) {
+    const v = cachedVoices.find(v => v.name.includes(name));
+    if (v) return v;
+  }
+  // Fallback: any online/remote voice for the language (usually higher quality)
+  const online = cachedVoices.find(v => v.lang.startsWith(targetLang) && !v.localService);
+  if (online) return online;
+  // Last resort: any matching voice
+  return cachedVoices.find(v => v.lang.startsWith(targetLang)) || null;
+}
+
+// Split text into sentences for more natural pacing
+function splitSentences(text) {
+  // Split on Chinese/English sentence endings, keep short segments
+  const raw = text.match(/[^。！？.!?\n]+[。！？.!?\n]?/g) || [text];
+  // Merge very short fragments
+  const merged = [];
+  let buf = '';
+  for (const seg of raw) {
+    buf += seg;
+    if (buf.length >= 20 || seg.match(/[。！？.!?\n]$/)) {
+      merged.push(buf.trim());
+      buf = '';
+    }
+  }
+  if (buf.trim()) merged.push(buf.trim());
+  return merged.filter(s => s.length > 0);
+}
 
 function toggleTTS() {
   if (ttsPlaying) {
@@ -1265,36 +1335,44 @@ function startTTS() {
   const text = document.getElementById('panelNarration').textContent.trim();
   if (!text) return;
 
-  // Stop any existing speech
   window.speechSynthesis.cancel();
 
-  ttsUtterance = new SpeechSynthesisUtterance(text);
-  ttsUtterance.lang = lang === 'zh' ? 'zh-CN' : 'en-US';
-  ttsUtterance.rate = 0.95;
-  ttsUtterance.pitch = 1;
+  ttsSentences = splitSentences(text);
+  ttsCurrentIndex = 0;
+  setTTSState(true);
+  speakNext();
+}
 
-  // Try to find a good voice
-  const voices = window.speechSynthesis.getVoices();
-  const targetLang = lang === 'zh' ? 'zh' : 'en';
-  const preferredVoice = voices.find(v => v.lang.startsWith(targetLang) && v.localService) ||
-                         voices.find(v => v.lang.startsWith(targetLang));
-  if (preferredVoice) {
-    ttsUtterance.voice = preferredVoice;
+function speakNext() {
+  if (ttsCurrentIndex >= ttsSentences.length || !ttsPlaying) {
+    setTTSState(false);
+    return;
   }
 
-  ttsUtterance.onend = () => {
-    setTTSState(false);
+  const utterance = new SpeechSynthesisUtterance(ttsSentences[ttsCurrentIndex]);
+  utterance.lang = lang === 'zh' ? 'zh-CN' : 'en-US';
+  utterance.rate = 0.92;
+  utterance.pitch = 1.05;
+
+  const voice = pickBestVoice();
+  if (voice) utterance.voice = voice;
+
+  utterance.onend = () => {
+    ttsCurrentIndex++;
+    // Small pause between sentences for natural rhythm
+    setTimeout(() => speakNext(), 120);
   };
 
-  ttsUtterance.onerror = () => {
-    setTTSState(false);
+  utterance.onerror = () => {
+    ttsCurrentIndex++;
+    speakNext();
   };
 
-  window.speechSynthesis.speak(ttsUtterance);
-  setTTSState(true);
+  window.speechSynthesis.speak(utterance);
 }
 
 function stopTTS() {
+  ttsPlaying = false;
   window.speechSynthesis.cancel();
   setTTSState(false);
 }
