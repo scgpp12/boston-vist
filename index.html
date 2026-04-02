@@ -1309,6 +1309,10 @@ if (window.speechSynthesis) {
 }
 
 function pickBestVoice() {
+  // Always refresh voices in case they loaded late
+  const fresh = window.speechSynthesis.getVoices();
+  if (fresh.length > 0) cachedVoices = fresh;
+
   const targetLang = lang === 'zh' ? 'zh' : 'en';
   const langVoices = cachedVoices.filter(v => v.lang.startsWith(targetLang));
 
