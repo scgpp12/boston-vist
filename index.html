@@ -1375,17 +1375,30 @@ function clearHistory() {
 // ===== TTS (OpenAI) =====
 let ttsPlaying = false;
 let ttsAudio = null;
-let ttsSessionId = 0; // Track each TTS session to avoid stale callbacks
+let ttsSessionId = 0;
 
+// Create Audio element immediately on user click to unlock autoplay on mobile
 function toggleTTS() {
   if (ttsPlaying) {
     stopTTS();
   } else {
-    startTTS();
+    // IMPORTANT: Create Audio in the click handler (synchronous) to satisfy
+    // mobile browser autoplay policy. Then load data into it async.
+    const audio = new Audio();
+    // Play a tiny silent mp3 to "unlock" the audio element
+    audio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBqSAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBqSAAAAAAAAAAAAAAAAAAAA';
+    audio.play().then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      startTTS(audio);
+    }).catch(() => {
+      // Fallback: try starting anyway
+      startTTS(audio);
+    });
   }
 }
 
-async function startTTS() {
+async function startTTS(audio) {
   const text = document.getElementById('panelNarration').textContent.trim();
   if (!text) return;
 
@@ -1398,10 +1411,10 @@ async function startTTS() {
   // Clean stop any previous playback
   stopTTS();
 
-  // Start new session
   ttsSessionId++;
   const mySession = ttsSessionId;
   ttsPlaying = true;
+  ttsAudio = audio;
   setTTSState(true);
 
   const hintEl = document.getElementById('ttsVoiceHint');
@@ -1423,7 +1436,6 @@ async function startTTS() {
       }),
     });
 
-    // Check if this session is still active
     if (mySession !== ttsSessionId) return;
 
     if (!response.ok) {
@@ -1435,27 +1447,8 @@ async function startTTS() {
     if (mySession !== ttsSessionId) return;
 
     const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio();
 
-    // Set up all event handlers before setting src
-    await new Promise((resolve, reject) => {
-      audio.oncanplaythrough = resolve;
-      audio.onerror = () => reject(new Error('Audio decode failed'));
-
-      // Timeout after 10 seconds
-      setTimeout(() => reject(new Error('Audio load timeout')), 10000);
-
-      audio.src = audioUrl;
-      audio.load();
-    });
-
-    if (mySession !== ttsSessionId) {
-      URL.revokeObjectURL(audioUrl);
-      return;
-    }
-
-    ttsAudio = audio;
-
+    // Reuse the already-unlocked audio element
     audio.onended = () => {
       URL.revokeObjectURL(audioUrl);
       ttsAudio = null;
@@ -1472,22 +1465,7 @@ async function startTTS() {
       hintEl.textContent = '';
     };
 
-    // Handle unexpected pause (browser policy, etc.)
-    audio.onpause = () => {
-      if (ttsPlaying && mySession === ttsSessionId && !audio.ended) {
-        // Try to resume after a brief delay
-        setTimeout(() => {
-          if (ttsPlaying && mySession === ttsSessionId && audio.paused && !audio.ended) {
-            audio.play().catch(() => {
-              ttsPlaying = false;
-              setTTSState(false);
-              hintEl.textContent = '';
-            });
-          }
-        }, 200);
-      }
-    };
-
+    audio.src = audioUrl;
     hintEl.textContent = 'OpenAI Nova';
     await audio.play();
 
@@ -1502,14 +1480,13 @@ async function startTTS() {
 }
 
 function stopTTS() {
-  ttsSessionId++; // Invalidate any pending async work
+  ttsSessionId++;
   ttsPlaying = false;
   if (ttsAudio) {
     ttsAudio.onended = null;
     ttsAudio.onerror = null;
-    ttsAudio.onpause = null;
     ttsAudio.pause();
-    if (ttsAudio.src) {
+    if (ttsAudio.src && ttsAudio.src.startsWith('blob:')) {
       URL.revokeObjectURL(ttsAudio.src);
     }
     ttsAudio = null;
