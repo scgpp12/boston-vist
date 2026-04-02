@@ -1263,6 +1263,9 @@ function clearHistory() {
 // ===== TTS (OpenAI) =====
 let ttsPlaying = false;
 let ttsAudio = null;
+let ttsChunks = [];
+let ttsChunkIndex = 0;
+let ttsAbort = null;
 
 function toggleTTS() {
   if (ttsPlaying) {
@@ -1270,6 +1273,60 @@ function toggleTTS() {
   } else {
     startTTS();
   }
+}
+
+// Split text into chunks under 4096 chars, breaking at sentence boundaries
+function splitTTSChunks(text, maxLen = 3500) {
+  if (text.length <= maxLen) return [text];
+
+  const chunks = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+    // Find last sentence boundary within maxLen
+    let cutPoint = -1;
+    const boundaries = ['。', '！', '？', '.', '!', '?', '\n'];
+    for (let i = maxLen; i > maxLen * 0.5; i--) {
+      if (boundaries.includes(remaining[i])) {
+        cutPoint = i + 1;
+        break;
+      }
+    }
+    if (cutPoint === -1) cutPoint = maxLen;
+
+    chunks.push(remaining.substring(0, cutPoint).trim());
+    remaining = remaining.substring(cutPoint).trim();
+  }
+  return chunks.filter(c => c.length > 0);
+}
+
+async function fetchTTSAudio(text, openaiKey) {
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'tts-1-hd',
+      input: text,
+      voice: 'nova',
+      speed: 1.0,
+    }),
+    signal: ttsAbort ? ttsAbort.signal : undefined,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`API Error ${response.status}: ${err}`);
+  }
+
+  const audioBlob = await response.blob();
+  return URL.createObjectURL(audioBlob);
 }
 
 async function startTTS() {
@@ -1282,54 +1339,60 @@ async function startTTS() {
     return;
   }
 
-  // Stop previous
   stopTTS();
+  ttsAbort = new AbortController();
+  ttsChunks = splitTTSChunks(text);
+  ttsChunkIndex = 0;
   setTTSState(true);
 
   const hintEl = document.getElementById('ttsVoiceHint');
   hintEl.textContent = lang === 'zh' ? '语音生成中...' : 'Generating...';
 
-  try {
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'tts-1-hd',
-        input: text,
-        voice: 'nova',
-        speed: 1.0,
-      }),
-    });
+  playNextChunk(openaiKey);
+}
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`API Error ${response.status}: ${err}`);
+async function playNextChunk(openaiKey) {
+  if (ttsChunkIndex >= ttsChunks.length || !ttsPlaying) {
+    setTTSState(false);
+    document.getElementById('ttsVoiceHint').textContent = '';
+    return;
+  }
+
+  const hintEl = document.getElementById('ttsVoiceHint');
+  const chunkInfo = ttsChunks.length > 1 ? ` (${ttsChunkIndex + 1}/${ttsChunks.length})` : '';
+
+  try {
+    if (ttsChunkIndex > 0) {
+      hintEl.textContent = (lang === 'zh' ? '生成下一段...' : 'Loading next...') + chunkInfo;
     }
 
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
+    const audioUrl = await fetchTTSAudio(ttsChunks[ttsChunkIndex], openaiKey);
+
+    if (!ttsPlaying) {
+      URL.revokeObjectURL(audioUrl);
+      return;
+    }
 
     ttsAudio = new Audio(audioUrl);
-    ttsAudio.playbackRate = 1.0;
 
     ttsAudio.onended = () => {
-      setTTSState(false);
       URL.revokeObjectURL(audioUrl);
+      ttsChunkIndex++;
+      playNextChunk(openaiKey);
+    };
+
+    ttsAudio.onerror = (e) => {
+      console.error('Audio playback error:', e);
+      URL.revokeObjectURL(audioUrl);
+      setTTSState(false);
       hintEl.textContent = '';
     };
 
-    ttsAudio.onerror = () => {
-      setTTSState(false);
-      URL.revokeObjectURL(audioUrl);
-      hintEl.textContent = '';
-    };
+    hintEl.textContent = 'OpenAI Nova' + chunkInfo;
+    await ttsAudio.play();
 
-    hintEl.textContent = 'OpenAI Nova';
-    ttsAudio.play();
   } catch (err) {
+    if (err.name === 'AbortError') return;
     console.error('TTS error:', err);
     setTTSState(false);
     hintEl.textContent = '';
@@ -1338,12 +1401,18 @@ async function startTTS() {
 }
 
 function stopTTS() {
+  ttsPlaying = false;
+  if (ttsAbort) {
+    ttsAbort.abort();
+    ttsAbort = null;
+  }
   if (ttsAudio) {
     ttsAudio.pause();
     ttsAudio.currentTime = 0;
     ttsAudio = null;
   }
-  ttsPlaying = false;
+  ttsChunks = [];
+  ttsChunkIndex = 0;
   setTTSState(false);
   document.getElementById('ttsVoiceHint').textContent = '';
 }
