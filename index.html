@@ -68,10 +68,13 @@ body {
 .api-input-wrap {
   flex: 1;
   min-width: 140px;
+  display: flex;
+  gap: 6px;
 }
 
 .api-input-wrap input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
@@ -674,7 +677,8 @@ body {
 <div class="header">
   <div class="header-title"><span>&#9670;</span> 城市故事</div>
   <div class="api-input-wrap">
-    <input type="password" id="claudeKey" placeholder="请输入 Claude API Key" />
+    <input type="password" id="claudeKey" placeholder="Claude API Key" />
+    <input type="password" id="openaiKey" placeholder="OpenAI API Key (语音)" />
   </div>
   <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
 </div>
@@ -1256,104 +1260,9 @@ function clearHistory() {
   renderHistory();
 }
 
-// ===== TTS =====
+// ===== TTS (OpenAI) =====
 let ttsPlaying = false;
-let ttsSentences = [];
-let ttsCurrentIndex = 0;
-let cachedVoices = [];
-
-// Voice quality ranking
-// Edge Neural voices (Online Natural) >> Google online >> Microsoft local
-// Edge provides "Microsoft XXX Online (Natural)" voices — far superior quality
-const VOICE_KEYWORDS_ZH = [
-  'Natural',              // Edge Neural voices — top priority
-  'Online',               // Edge/Chrome online voices
-  'Xiaoxiao',             // Edge Neural — young female, very natural
-  'Yunxi',                // Edge Neural — male, narrator style
-  'Xiaoyi',               // Edge Neural — female
-  'Google 普通话',
-  'Google 国语',
-  'Yaoyao',               // Windows local
-  'Huihui',               // Windows local
-  'Kangkang',             // Windows local (male)
-  'Ting-Ting',            // macOS
-];
-const VOICE_KEYWORDS_EN = [
-  'Natural',              // Edge Neural voices — top priority
-  'Online',               // Edge/Chrome online voices
-  'Jenny',                // Edge Neural — female, very natural
-  'Aria',                 // Edge Neural — female
-  'Guy',                  // Edge Neural — male
-  'Google US English',
-  'Google UK English Female',
-  'Google UK English Male',
-  'Samantha',             // macOS
-  'Zira',                 // Windows local
-  'David',                // Windows local
-  'Mark',                 // Windows local
-];
-
-function loadVoices() {
-  cachedVoices = window.speechSynthesis.getVoices();
-  if (cachedVoices.length > 0) {
-    console.log(`[TTS] ${cachedVoices.length} voices loaded.`);
-    const zhNeural = cachedVoices.filter(v => v.lang.startsWith('zh') && (v.name.includes('Natural') || v.name.includes('Online')));
-    if (zhNeural.length > 0) {
-      console.log(`[TTS] Neural ZH voices: ${zhNeural.map(v => v.name).join(', ')}`);
-    }
-  }
-}
-if (window.speechSynthesis) {
-  loadVoices();
-  window.speechSynthesis.onvoiceschanged = loadVoices;
-}
-
-function pickBestVoice() {
-  // Always refresh voices in case they loaded late
-  const fresh = window.speechSynthesis.getVoices();
-  if (fresh.length > 0) cachedVoices = fresh;
-
-  const targetLang = lang === 'zh' ? 'zh' : 'en';
-  const langVoices = cachedVoices.filter(v => v.lang.startsWith(targetLang));
-
-  if (langVoices.length === 0) return null;
-
-  // 1. Best: Edge Neural "Natural" voices
-  const natural = langVoices.find(v => v.name.includes('Natural'));
-  if (natural) return natural;
-
-  // 2. Good: any Online (non-local) voice
-  const online = langVoices.find(v => !v.localService || v.name.includes('Online'));
-  if (online) return online;
-
-  // 3. Try keyword priority list
-  const keywords = lang === 'zh' ? VOICE_KEYWORDS_ZH : VOICE_KEYWORDS_EN;
-  for (const kw of keywords) {
-    const match = langVoices.find(v => v.name.includes(kw));
-    if (match) return match;
-  }
-
-  // 4. Last resort
-  return langVoices[0];
-}
-
-// Split text into sentences for more natural pacing
-function splitSentences(text) {
-  // Split on Chinese/English sentence endings, keep short segments
-  const raw = text.match(/[^。！？.!?\n]+[。！？.!?\n]?/g) || [text];
-  // Merge very short fragments
-  const merged = [];
-  let buf = '';
-  for (const seg of raw) {
-    buf += seg;
-    if (buf.length >= 20 || seg.match(/[。！？.!?\n]$/)) {
-      merged.push(buf.trim());
-      buf = '';
-    }
-  }
-  if (buf.trim()) merged.push(buf.trim());
-  return merged.filter(s => s.length > 0);
-}
+let ttsAudio = null;
 
 function toggleTTS() {
   if (ttsPlaying) {
@@ -1363,65 +1272,80 @@ function toggleTTS() {
   }
 }
 
-function startTTS() {
+async function startTTS() {
   const text = document.getElementById('panelNarration').textContent.trim();
   if (!text) return;
 
-  window.speechSynthesis.cancel();
-
-  ttsSentences = splitSentences(text);
-  ttsCurrentIndex = 0;
-
-  // Show voice info
-  const voice = pickBestVoice();
-  const hintEl = document.getElementById('ttsVoiceHint');
-  if (voice) {
-    const isNeural = voice.name.includes('Natural') || voice.name.includes('Online');
-    if (isNeural) {
-      hintEl.textContent = '🎙 ' + voice.name.split('-')[0].trim();
-    } else {
-      hintEl.textContent = lang === 'zh' ? '💡 用 Edge 浏览器可获得更自然的语音' : '💡 Use Edge for natural AI voice';
-    }
-  } else {
-    hintEl.textContent = '';
-  }
-
-  setTTSState(true);
-  speakNext();
-}
-
-function speakNext() {
-  if (ttsCurrentIndex >= ttsSentences.length || !ttsPlaying) {
-    setTTSState(false);
+  const openaiKey = document.getElementById('openaiKey').value.trim();
+  if (!openaiKey) {
+    showError(lang === 'zh' ? '请输入 OpenAI API Key 以启用语音' : 'Please enter OpenAI API Key for voice');
     return;
   }
 
-  const utterance = new SpeechSynthesisUtterance(ttsSentences[ttsCurrentIndex]);
-  utterance.lang = lang === 'zh' ? 'zh-CN' : 'en-US';
-  utterance.rate = 0.92;
-  utterance.pitch = 1.05;
+  // Stop previous
+  stopTTS();
+  setTTSState(true);
 
-  const voice = pickBestVoice();
-  if (voice) utterance.voice = voice;
+  const hintEl = document.getElementById('ttsVoiceHint');
+  hintEl.textContent = lang === 'zh' ? '语音生成中...' : 'Generating...';
 
-  utterance.onend = () => {
-    ttsCurrentIndex++;
-    // Small pause between sentences for natural rhythm
-    setTimeout(() => speakNext(), 120);
-  };
+  try {
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'tts-1-hd',
+        input: text,
+        voice: 'nova',
+        speed: 1.0,
+      }),
+    });
 
-  utterance.onerror = () => {
-    ttsCurrentIndex++;
-    speakNext();
-  };
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`API Error ${response.status}: ${err}`);
+    }
 
-  window.speechSynthesis.speak(utterance);
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    ttsAudio = new Audio(audioUrl);
+    ttsAudio.playbackRate = 1.0;
+
+    ttsAudio.onended = () => {
+      setTTSState(false);
+      URL.revokeObjectURL(audioUrl);
+      hintEl.textContent = '';
+    };
+
+    ttsAudio.onerror = () => {
+      setTTSState(false);
+      URL.revokeObjectURL(audioUrl);
+      hintEl.textContent = '';
+    };
+
+    hintEl.textContent = 'OpenAI Nova';
+    ttsAudio.play();
+  } catch (err) {
+    console.error('TTS error:', err);
+    setTTSState(false);
+    hintEl.textContent = '';
+    showError(lang === 'zh' ? '语音生成失败: ' + err.message : 'Voice failed: ' + err.message);
+  }
 }
 
 function stopTTS() {
+  if (ttsAudio) {
+    ttsAudio.pause();
+    ttsAudio.currentTime = 0;
+    ttsAudio = null;
+  }
   ttsPlaying = false;
-  window.speechSynthesis.cancel();
   setTTSState(false);
+  document.getElementById('ttsVoiceHint').textContent = '';
 }
 
 function setTTSState(playing) {
@@ -1442,12 +1366,6 @@ function setTTSState(playing) {
     stopIcon.style.display = 'none';
     label.textContent = lang === 'zh' ? '播放' : 'Play';
   }
-}
-
-// Load voices (some browsers load asynchronously)
-if (window.speechSynthesis) {
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 // ===== Search =====
